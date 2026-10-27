@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Marching Squares, Tile by Tile</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: single reading column (~68ch) on survey-sheet paper; figures break out wider; each figure = canvas + control strip + caption. */
+:root {
+  --paper: #f2f5f0;
+  --panel: #e7ece5;
+  --ink: #1b221e;
+  --muted: #5a675f;
+  --rule: #cfd8cd;
+  --contour: #9b5a2c;
+  --index: #6a3412;
+  --water: #2c6a9a;
+  --warn: #a8321f;
+  --tint-lo: #d9e6d6;
+  --tint-hi: #f1e2c6;
+  --shade: #6f7d70;
+  --code-bg: #e3e9e1;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --s-0: 0.8125rem; --s-1: 1.0625rem; --s-2: 1.3rem; --s-3: 1.75rem; --s-4: clamp(2.2rem, 6vw, 3.6rem);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111713; --panel: #18201b; --ink: #e2e8e1; --muted: #92a097; --rule: #2a352e;
+    --contour: #d38d58; --index: #f2b47f; --water: #72b3e2; --warn: #f07a62;
+    --tint-lo: #16211a; --tint-hi: #2c2518; --shade: #050806; --code-bg: #0c110e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111713; --panel: #18201b; --ink: #e2e8e1; --muted: #92a097; --rule: #2a352e;
+  --contour: #d38d58; --index: #f2b47f; --water: #72b3e2; --warn: #f07a62;
+  --tint-lo: #16211a; --tint-hi: #2c2518; --shade: #050806; --code-bg: #0c110e;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink);
+  font-family: var(--f-body); font-size: var(--s-1); line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 4rem;
+}
+.wrap { max-width: 68ch; margin: 0 auto; }
+.wide { max-width: 1060px; margin: 0 auto; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; line-height: 1.12; margin: 0; }
+h1 { font-size: var(--s-4); font-weight: 800; font-stretch: 78%; letter-spacing: -0.01em; }
+h2 { font-size: var(--s-3); font-weight: 700; font-stretch: 85%; }
+h3 { font-size: var(--s-2); font-weight: 650; font-stretch: 90%; }
+p { margin: 0; }
+a { color: var(--water); }
+.eyebrow { font-family: var(--f-display); font-size: var(--s-0); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-weight: 600; }
+code, .mono { font-family: var(--f-mono); font-size: 0.86em; }
+:not(pre) > code { background: var(--code-bg); padding: 0.08em 0.35em; border-radius: 3px; }
+pre { background: var(--code-bg); border-radius: 4px; padding: 1rem 1.1rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.55; margin: 0; }
+pre code { font-size: inherit; }
+.c { color: var(--muted); }
+.k { color: var(--water); }
+.s { color: var(--contour); }
+
+header.top { padding-block: 3.2rem 1.4rem; display: grid; gap: 0.9rem; }
+header.top .lede { font-size: var(--s-2); color: var(--muted); max-width: 52ch; line-height: 1.45; }
+.sheet-meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; font-family: var(--f-mono); font-size: var(--s-0); color: var(--muted); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding-block: 0.55rem; }
+
+section { display: grid; gap: 1.05rem; padding-block: 2.6rem 0.4rem; }
+section > .wrap { display: grid; gap: 1rem; }
+.secno { font-family: var(--f-mono); font-size: var(--s-0); color: var(--contour); }
+
+figure { margin: 0.6rem 0 0; display: grid; gap: 0.6rem; }
+figcaption { font-size: var(--s-0); color: var(--muted); font-family: var(--f-display); max-width: 75ch; }
+.canvas-box { position: relative; width: 100%; border: 1px solid var(--rule); background: var(--panel); border-radius: 3px; overflow: hidden; }
+canvas { display: block; width: 100%; height: auto; touch-action: manipulation; }
+.controls { display: flex; flex-wrap: wrap; gap: 0.7rem 1.4rem; align-items: center; font-family: var(--f-display); font-size: var(--s-0); }
+.controls label { display: inline-flex; gap: 0.5rem; align-items: center; }
+.controls input[type=range] { width: 150px; accent-color: var(--contour); }
+.controls input[type=checkbox], .controls input[type=radio] { accent-color: var(--contour); }
+.readout { font-family: var(--f-mono); font-size: var(--s-0); color: var(--muted); font-variant-numeric: tabular-nums; }
+.readout b { color: var(--ink); font-weight: 600; }
+button.btn { font-family: var(--f-display); font-size: var(--s-0); font-weight: 600; border: 1px solid var(--contour); color: var(--contour); background: transparent; padding: 0.35rem 0.8rem; border-radius: 3px; cursor: pointer; }
+button.btn:hover { background: var(--panel); }
+:focus-visible { outline: 2px solid var(--water); outline-offset: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+.seg label { padding: 0.3rem 0.7rem; cursor: pointer; gap: 0.3rem; }
+.seg label:has(input:checked) { background: var(--contour); color: var(--paper); }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--water); outline-offset: -2px; }
+
+.split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+@media (max-width: 760px) { .split { grid-template-columns: minmax(0, 1fr); } }
+.inspector { font-family: var(--f-mono); font-size: 0.78rem; line-height: 1.7; background: var(--panel); border: 1px solid var(--rule); border-radius: 3px; padding: 0.9rem 1rem; min-width: 0; overflow-x: auto; }
+.inspector h4 { font-family: var(--f-display); font-size: var(--s-0); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 0 0 0.3rem; }
+.inspector .bit-on { color: var(--water); font-weight: 600; }
+.inspector .row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+
+.cases { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0.6rem; }
+@media (max-width: 760px) { .cases { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.case { display: grid; gap: 0.2rem; justify-items: center; font-family: var(--f-mono); font-size: 0.72rem; color: var(--muted); }
+.case svg { width: 100%; max-width: 96px; height: auto; }
+.case b { color: var(--ink); font-weight: 600; }
+
+.layers-unused { display: grid; gap: 0; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+.layer { display: grid; grid-template-columns: 11rem minmax(0, 1fr) auto; gap: 1rem; padding: 0.65rem 0.9rem; border-top: 1px solid var(--rule); align-items: baseline; background: var(--paper); }
+.layer:first-child { border-top: 0; }
+.layer .nm { font-family: var(--f-display); font-weight: 650; font-stretch: 90%; }
+.layer .what { font-size: 0.92rem; color: var(--muted); }
+.layer .tag { font-family: var(--f-mono); font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+.layer.req { background: var(--panel); }
+.layer.flag { box-shadow: inset 3px 0 0 var(--warn); }
+.layer.flag .tag { color: var(--warn); }
+@media (max-width: 640px) { .layer { grid-template-columns: minmax(0, 1fr); gap: 0.15rem; } }
+
+.stats { display: flex; flex-wrap: wrap; gap: 0.5rem 1.6rem; }
+.stat { display: grid; }
+.stat .v { font-family: var(--f-display); font-size: var(--s-3); font-weight: 700; font-stretch: 80%; font-variant-numeric: tabular-nums; }
+.stat .l { font-family: var(--f-display); font-size: var(--s-0); color: var(--muted); }
+
+ul.notes { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.55rem; }
+.callout { border-left: 2px solid var(--contour); padding: 0.2rem 0 0.2rem 1rem; color: var(--muted); }
+footer { margin-top: 3rem; border-top: 1px solid var(--rule); padding-top: 1rem; font-family: var(--f-display); font-size: var(--s-0); color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="top wrap">
+  <span class="eyebrow">Field notes · contour generation</span>
+  <h1>Marching Squares, Tile by Tile</h1>
+  <p class="lede">How a grid of samples becomes contour lines, how this library implements it, and what changes once the grid is cut into map tiles.</p>
+  <div class="sheet-meta"><span>Cell: 2 × 2 samples</span><span>Cases: 16</span><span>Saddle rules: 4</span><span>Module: github.com/valri11/contourmap</span></div>
+</header>
+
+<div class="wide">
+  <figure>
+    <div class="canvas-box"><canvas id="hero" aria-label="Synthetic terrain with contour lines"></canvas></div>
+    <div class="controls">
+      <label for="heroIv">Interval <input type="range" id="heroIv" min="5" max="80" step="5" value="20"> <span class="mono" id="heroIvV">20 m</span></label>
+      <label for="heroTint"><input type="checkbox" id="heroTint" checked> Hypsometric tint + hillshade</label>
+      <label for="heroIdx"><input type="checkbox" id="heroIdx" checked> Index contour every 5th</label>
+      <span class="readout" id="heroStats"></span>
+    </div>
+    <figcaption>Synthetic 180 × 110 heightfield, contoured live in your browser by a line-for-line JavaScript port of contourmap. Each level is a separate pass over the grid, as in <code>m.ContourLevels(zs)</code>.</figcaption>
+  </figure>
+</div>
+
+<section>
+  <div class="wrap">
+    <span class="secno">§1</span>
+    <h2>The question each cell answers</h2>
+    <p>A DEM tile is a regular grid of heights. A contour at height <i>z</i> is the curve where the surface crosses <i>z</i>. We never see the surface itself, only samples at grid nodes, so the job is to guess where the curve passes between them.</p>
+    <p>Marching squares treats every 2 × 2 block of neighbouring samples as one <em>cell</em> and answers two questions for it: which corners are above <i>z</i>, and where along each edge does the crossing sit. A tile with 256 × 256 samples has 255 × 255 cells. Each one is handled independently, which is why the algorithm is simple and fast.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="secno">§2</span>
+    <h2>Classify, look up, interpolate</h2>
+    <p><b>Classify.</b> Each corner gets one bit: 1 if the sample is above <i>z</i>, 0 otherwise. contourmap packs them as <code>ul=1, ur=2, ll=4, lr=8</code>, giving a case number 0–15. Cases 0 and 15 have no crossing and are skipped, and on real terrain that is most cells.</p>
+    <p><b>Look up.</b> The case number says which edges the line enters and leaves through. An edge is crossed exactly when its two endpoints disagree.</p>
+    <p><b>Interpolate.</b> Along a crossed edge with endpoint heights <i>a</i> and <i>b</i>, the crossing sits at fraction <i>t</i> = (<i>z</i> − <i>a</i>) / (<i>b</i> − <i>a</i>). Without this step every crossing lands on an edge midpoint and the lines come out jagged. Switch it off below to compare.</p>
+  </div>
+  <div class="wide">
+    <figure>
+      <div class="split">
+        <div class="canvas-box"><canvas id="grid" aria-label="Interactive 9 by 7 sample grid"></canvas></div>
+        <div class="inspector" id="insp" aria-live="polite"></div>
+      </div>
+      <div class="controls">
+        <label for="gz">Level <i>z</i> <input type="range" id="gz" min="0.5" max="8.5" step="0.25" value="4.5"> <span class="mono" id="gzV">4.50</span></label>
+        <label for="gInterp"><input type="checkbox" id="gInterp" checked> Linear interpolation</label>
+        <label for="gCases"><input type="checkbox" id="gCases" checked> Case numbers</label>
+        <button class="btn" id="gTrace" type="button">Trace polylines</button>
+        <span class="readout" id="gStats"></span>
+      </div>
+      <figcaption>Filled nodes are above <i>z</i>. Click or tap any cell to see its corner bits, case number and the interpolation arithmetic. “Trace polylines” replays the stitching walk from §4 in the order contourmap would emit points.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="secno">§3</span>
+    <h2>All sixteen cases</h2>
+    <p>Bits are written <code>lr ll ur ul</code>, so case 6 = <code>0110</code> means upper-right and lower-left are high. Fourteen cases have one obvious segment. Cases 6 and 9 have two high corners on a diagonal and two valid answers, drawn solid and dashed.</p>
+  </div>
+  <div class="wide"><div class="cases" id="cases"></div></div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="secno">§3a</span>
+    <h2>Saddles: the one real decision</h2>
+    <p>In a saddle cell the four samples cannot tell you whether the two high corners join through the middle (one ridge) or stay apart (two hills). Upstream contourmap hard-coded an answer, <code>const connectHigh = false</code>, so high corners never join inside a cell. That is consistent, and consistency is what keeps polylines from breaking, but it is sometimes topologically wrong. This library keeps it as the default (<code>SaddleConnectLow</code>) and lets you pick another rule.</p>
+    <p>Two common fixes. The <b>centre average</b> samples the mean of the four corners. The <b>asymptotic decider</b> evaluates the bilinear surface at its saddle point, (<i>ul·lr − ur·ll</i>) / (<i>ul + lr − ur − ll</i>), which is exact for that surface. The shaded background below is the true bilinear surface above <i>z</i>; see which rule agrees with it as you move the level.</p>
+    <pre><code>m := contourmap.FromFloat64s(w, h, grid)
+m.Saddle = contourmap.SaddleAsymptotic   <span class="c">// or SaddleCenter, SaddleConnectHigh</span></code></pre>
+  </div>
+  <div class="wide">
+    <figure>
+      <div class="canvas-box" style="max-width:560px"><canvas id="saddle" aria-label="Saddle cell demonstration"></canvas></div>
+      <div class="controls">
+        <div class="seg" role="radiogroup" aria-label="Saddle rule">
+          <label><input type="radio" name="sm" value="low" checked>contourmap</label>
+          <label><input type="radio" name="sm" value="center">Centre avg</label>
+          <label><input type="radio" name="sm" value="asymptotic">Asymptotic</label>
+        </div>
+        <label for="sz">Level <i>z</i> <input type="range" id="sz" min="2.2" max="8.8" step="0.1" value="5.2"> <span class="mono" id="szV">5.2</span></label>
+        <span class="readout" id="sStats"></span>
+      </div>
+      <figcaption>Two peaks of 9 on a diagonal with 2s between them. The centre cell is case 9. Its bilinear saddle sits at 5.5: below that the peaks are one hill, above it they are two.</figcaption>
+    </figure>
+  </div>
+  <div class="wrap">
+    <p class="callout">For 20 m contours on real DTM this rarely matters visually. It matters more for 1 m intervals on flat, noisy ground, where saddles appear in clusters and the fixed rule can split one contour into many tiny loops.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="secno">§4</span>
+    <h2>From segments to polylines</h2>
+    <p>Per-cell segments are useless for rendering and labelling; you want long polylines. A naive approach collects segments and joins matching endpoints with a float-keyed lookup. Upstream contourmap does something neater. Because each cell's segment has a direction (high side always on the same hand), every crossed edge is the <em>entry</em> of exactly one segment. Two maps capture the whole graph:</p>
+    <pre><code><span class="c">// for each segment in a cell: the edge it starts on → the crossing point,</span>
+<span class="c">// and that point → the edge it exits through (= next cell's entry edge)</span>
+edgePoint[te] = t
+nextEdge[t]   = le</code></pre>
+    <p>Edges are keyed by integer grid coordinates, so neighbouring cells agree on the key for a shared edge without any float comparison. Stitching is then a walk:</p>
+    <pre><code><span class="k">for</span> len(edgePoint) &gt; 0 {
+    e := <span class="c">/* any unused edge; prefer one on the grid boundary */</span>
+    p := edgePoint[e]; contour = append(contour, p); e = nextEdge[p]
+    <span class="k">for</span> {
+        p, ok := edgePoint[e]
+        <span class="k">if</span> !ok { <span class="k">break</span> }            <span class="c">// ran off the grid: open contour</span>
+        contour = append(contour, p)
+        delete(edgePoint, e)
+        e = nextEdge[p]                 <span class="c">// back at start: closed, c[0] == c[n-1]</span>
+    }
+}</code></pre>
+    <p>Starting from boundary edges first guarantees open contours are walked from their true start, never from the middle. Everything left after that must be a closed loop.</p>
+    <h3>What this library changes</h3>
+    <ul class="notes">
+      <li><b>Arrays instead of maps.</b> Every edge gets an integer id: horizontal edges are <code>y·(w−1)+x</code>, vertical edges follow them. The walk uses three flat slices (<code>next</code>, <code>pts</code>, <code>hasIn</code>) indexed by edge id. They come from a <code>sync.Pool</code> and are left clean after each call, so a whole contour map reuses the same memory.</li>
+      <li><b>Starts found by in-degree.</b> An open contour starts on an entry edge that no segment exits through. That is either the grid border or the border of a no-data region. No boundary flag is needed, and holes work the same way as borders. Everything left afterwards is a loop.</li>
+      <li><b>Open contours keep their last point.</b> Upstream stored crossing points only for entry edges, so every open contour lost its final segment at the border. Exit points are now stored too.</li>
+      <li><b>Deterministic output.</b> Starts are taken in scan order, so the same input always gives the same contours, in the same order, from the same start points.</li>
+      <li><b>Block skipping.</b> Cells are grouped into 16 × 16 blocks with a precomputed min and max. A block whose range doesn't span the level is skipped without classifying any of its cells.</li>
+    </ul>
+    <p>On a 262 × 262 grid contoured every 10 m (41 levels), this goes from 9.7 ms, 12.8 MB and 2,459 allocations per run of all levels to 1.36 ms, 0.58 MB and 97 allocations. Most of what remains is the output itself.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="secno">§5</span>
+    <h2>Many levels, edges and holes</h2>
+    <p>A contour map is the single-level algorithm run once per level. Pick levels as integer multiples of the interval: <i>k</i>·interval for <i>k</i> from ⌈min/interval⌉ to ⌊max/interval⌋. Index the loop by <i>k</i> rather than adding the interval to a float each step, or a 0.3048 ft conversion drifts by the 40th level.</p>
+    <p>Two library details shape the result:</p>
+    <ul class="notes">
+      <li><b>Strict comparison.</b> A sample is “high” only if <code>v &gt; z</code>. Terrain often holds exact integers, so a sample equal to the level would sit on the line and make degenerate zero-length segments. Callers usually nudge the level by a small epsilon (<code>z − 0.0001</code>) to avoid that.</li>
+      <li><b>No-data.</b> The library has one internal sentinel, <code>closed = −MaxFloat64</code>, used by <code>Closed()</code> to pad the border so every contour becomes a ring. NaN means no data: cells touching a NaN emit nothing and contours stop at the edge of the hole. Convert sentinels such as −9999 to NaN before building the map. Upstream had no concept of holes, so NaN corners counted as “low” and produced NaN points.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <span class="secno">§6</span>
+    <h2>Cutting the map into tiles</h2>
+    <p>A map client asks for contours one web tile at a time. If each tile is contoured on its own 256 samples, the cells that straddle tile borders are never processed: tile A's last sample and tile B's first sample are neighbours, but no single tile contains both. Every line breaks at every seam.</p>
+    <p>The fix is a halo: contour a window slightly larger than the tile using pixels from neighbours, then clip. One pixel closes the gap. Drag the halo to zero below to see the seams open.</p>
+  </div>
+  <div class="wide">
+    <figure>
+      <div class="canvas-box" style="max-width:620px"><canvas id="tiles" aria-label="Three by three tiles with halo"></canvas></div>
+      <div class="controls">
+        <label for="halo">Halo <input type="range" id="halo" min="0" max="3" step="1" value="0"> <span class="mono" id="haloV">0 px</span></label>
+        <label for="tColor"><input type="checkbox" id="tColor" checked> Colour lines by tile</label>
+        <span class="readout" id="tStats"></span>
+      </div>
+      <figcaption>Nine 20-sample tiles, each contoured independently from its own window and clipped to its own square. At halo 0 the one-sample strip between tiles has no contours at all.</figcaption>
+    </figure>
+  </div>
+  <div class="wrap">
+    <h3>Doing it with this library</h3>
+    <pre><code><span class="c">// window: the tile plus halo pixels from each neighbour, row-major</span>
+m := contourmap.FromFloat64s(<span class="s">256</span>+<span class="s">2</span>*halo, <span class="s">256</span>+<span class="s">2</span>*halo, window)
+<span class="k">for</span> _, lines := <span class="k">range</span> m.ContourLevels(levels) {
+    <span class="k">for</span> _, c := <span class="k">range</span> lines {
+        <span class="k">for</span> _, p := <span class="k">range</span> c {
+            px, py := p.X-halo, p.Y-halo   <span class="c">// back to tile pixel coordinates</span>
+        }
+    }
+}</code></pre>
+    <p>Clip the result to the tile, plus any vector-tile buffer. Lines inside the halo duplicate the neighbour tile's lines.</p>
+    <p class="callout">Fill missing neighbours and voids with NaN, not 0. A 0 creates a cliff, and every level between the terrain and 0 then runs along the edge of the data: stacked lines that aren't terrain, plus extra work for every one of them.</p>
+  </div>
+</section>
+
+<footer class="wrap">The algorithm port and demos run locally in this page. Source: marching.go and contourmap.go in this repository, derived from github.com/fogleman/contourmap (MIT).</footer>
+
+<script>
+(() => {
+"use strict";
+const $ = s => document.querySelector(s);
+const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- marching squares: port of contourmap marching.go (keeps open-contour endpoints) ---------- */
+const CASES = {1:[["t","l"]],2:[["r","t"]],3:[["r","l"]],4:[["l","b"]],5:[["t","b"]],6:[["r","t"],["l","b"]],7:[["r","b"]],
+  8:[["b","r"]],9:[["t","l"],["b","r"]],10:[["b","t"]],11:[["b","l"]],12:[["l","r"]],13:[["t","r"]],14:[["l","t"]]};
+const SADDLE_HIGH = {6:[["l","t"],["r","b"]],9:[["t","r"],["b","l"]]};
+
+function marching(grid, w, h, z, opt = {}) {
+  const saddle = opt.saddle || "low", interp = opt.interp !== false;
+  const at = (x, y) => grid[y * w + x];
+  const frac = (a, b) => {
+    if (!interp) return 0.5;
+    const f = a === b ? 0 : (z - a) / (b - a);
+    return Math.min(Math.max(f, 1e-9), 1 - 1e-9);
+  };
+  const pt = new Map(), next = new Map(), hasIn = new Set(), from = [];
+  for (let y = 0; y < h - 1; y++) {
+    for (let x = 0; x < w - 1; x++) {
+      const ul = at(x, y), ur = at(x + 1, y), ll = at(x, y + 1), lr = at(x + 1, y + 1);
+      const c = (ul > z ? 1 : 0) | (ur > z ? 2 : 0) | (ll > z ? 4 : 0) | (lr > z ? 8 : 0);
+      if (c === 0 || c === 15) continue;
+      const E = {
+        t: { k: `h${x},${y}`, p: [x + frac(ul, ur), y] },
+        b: { k: `h${x},${y + 1}`, p: [x + frac(ll, lr), y + 1] },
+        l: { k: `v${x},${y}`, p: [x, y + frac(ul, ll)] },
+        r: { k: `v${x + 1},${y}`, p: [x + 1, y + frac(ur, lr)] },
+      };
+      let pairs = CASES[c];
+      if (c === 6 || c === 9) {
+        let high = saddle === "high";
+        if (saddle === "center") high = (ul + ur + ll + lr) / 4 > z;
+        if (saddle === "asymptotic") {
+          const d = ul + lr - ur - ll;
+          high = d !== 0 && (ul * lr - ur * ll) / d > z;
+        }
+        if (high) pairs = SADDLE_HIGH[c];
+      }
+      for (const [a, b] of pairs) {
+        const ea = E[a], eb = E[b];
+        pt.set(ea.k, ea.p); pt.set(eb.k, eb.p);
+        next.set(ea.k, eb.k); hasIn.add(eb.k); from.push(ea.k);
+      }
+    }
+  }
+  // Open contours start on an edge nothing exits through; the rest are loops.
+  const lines = [];
+  const walk = s => {
+    const line = [pt.get(s)];
+    for (let e = s; ;) {
+      const n = next.get(e);
+      if (n === undefined) break;
+      next.delete(e); hasIn.delete(n); line.push(pt.get(n));
+      if (n === s) break;
+      e = n;
+    }
+    lines.push(line);
+  };
+  for (const e of from) if (!hasIn.has(e) && next.has(e)) walk(e);
+  for (const e of from) if (next.has(e)) walk(e);
+  return lines;
+}
+const isClosed = l => l.length > 2 && l[0] === l[l.length - 1];
+
+/* ---------- canvas helpers ---------- */
+function fit(canvas, aspect) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = canvas.parentElement.clientWidth;
+  const h = Math.round(w / aspect);
+  canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  canvas.style.height = h + "px";
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+function strokeLines(ctx, lines, sx, sy, ox = 0, oy = 0) {
+  ctx.beginPath();
+  for (const l of lines) {
+    l.forEach((p, i) => i ? ctx.lineTo(ox + p[0] * sx, oy + p[1] * sy) : ctx.moveTo(ox + p[0] * sx, oy + p[1] * sy));
+  }
+  ctx.stroke();
+}
+const hex = s => { s = s.replace("#", ""); return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16)); };
+
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function terrain(w, h, seed) {
+  const r = mulberry32(seed), bumps = [];
+  for (let i = 0; i < 16; i++) bumps.push({ x: r() * w, y: r() * h, s: (0.05 + r() * 0.16) * w, a: (r() < 0.22 ? -1 : 1) * (50 + r() * 210) });
+  const g = new Float64Array(w * h);
+  let min = Infinity, max = -Infinity;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let v = 140;
+    for (const b of bumps) v += b.a * Math.exp(-((x - b.x) ** 2 + (y - b.y) ** 2) / (2 * b.s * b.s));
+    v += 14 * Math.sin(x * 0.11 + 2 * Math.cos(y * 0.05)) * Math.cos(y * 0.08);
+    g[y * w + x] = v; if (v < min) min = v; if (v > max) max = v;
+  }
+  return { g, w, h, min, max };
+}
+
+/* ---------- hero ---------- */
+const HERO = terrain(180, 110, 7);
+let heroTint = null, heroTintKey = "";
+function buildTint() {
+  const { g, w, h, min, max } = HERO;
+  const lo = hex(tok("--tint-lo")), hi = hex(tok("--tint-hi")), sh = hex(tok("--shade"));
+  const key = lo + hi + sh;
+  if (heroTint && key === heroTintKey) return heroTint;
+  const off = document.createElement("canvas"); off.width = w; off.height = h;
+  const octx = off.getContext("2d"), img = octx.createImageData(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, t = (g[i] - min) / (max - min);
+    const dx = (g[y * w + Math.min(x + 1, w - 1)] - g[y * w + Math.max(x - 1, 0)]) * 0.08;
+    const dy = (g[Math.min(y + 1, h - 1) * w + x] - g[Math.max(y - 1, 0) * w + x]) * 0.08;
+    const n = Math.hypot(dx, dy, 1);
+    const light = Math.max(0, (dx * 0.6 + dy * 0.6 + 0.55) / n);           // NW light
+    const s = Math.min(1, Math.max(0, 1 - light)) * 0.55;
+    for (let k = 0; k < 3; k++) img.data[i * 4 + k] = (lo[k] + (hi[k] - lo[k]) * t) * (1 - s) + sh[k] * s;
+    img.data[i * 4 + 3] = 255;
+  }
+  octx.putImageData(img, 0, 0);
+  heroTint = off; heroTintKey = key;
+  return off;
+}
+function drawHero() {
+  const cv = $("#hero"), { ctx, w, h } = fit(cv, 180 / 110);
+  const iv = +$("#heroIv").value, tint = $("#heroTint").checked, idx = $("#heroIdx").checked;
+  $("#heroIvV").textContent = iv + " m";
+  ctx.fillStyle = tok("--panel"); ctx.fillRect(0, 0, w, h);
+  if (tint) { ctx.imageSmoothingEnabled = true; ctx.drawImage(buildTint(), 0, 0, w, h); }
+  const { g, w: W, h: H, min, max } = HERO, sx = w / (W - 1), sy = h / (H - 1);
+  const t0 = performance.now();
+  const k0 = Math.ceil(min / iv), k1 = Math.floor(max / iv);
+  let nl = 0, np = 0, minor = [], major = [];
+  for (let k = k0; k <= k1; k++) {
+    const lines = marching(g, W, H, k * iv - 1e-4);
+    nl += lines.length; for (const l of lines) np += l.length;
+    (idx && k % 5 === 0 ? major : minor).push(...lines);
+  }
+  const ms = performance.now() - t0;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = tok("--contour"); ctx.lineWidth = 0.8; strokeLines(ctx, minor, sx, sy);
+  ctx.strokeStyle = tok("--index"); ctx.lineWidth = 1.7; strokeLines(ctx, major, sx, sy);
+  $("#heroStats").innerHTML = `<b>${k1 - k0 + 1}</b> levels · <b>${nl}</b> polylines · <b>${np.toLocaleString()}</b> vertices · ${ms.toFixed(1)} ms`;
+}
+
+/* ---------- §2 grid ---------- */
+const GW = 9, GH = 7;
+const GV = [1,2,3,3,2,2,3,4,3, 2,4,6,5,3,3,5,6,4, 3,6,8,7,4,4,7,8,5, 2,5,7,6,4,3,5,6,4, 1,3,4,4,5,6,5,4,2, 1,2,3,5,7,8,6,3,1, 0,1,2,3,5,5,4,2,1];
+let sel = { x: 3, y: 3 }, traceAnim = null, gGeom = null;
+function caseOf(x, y, z) {
+  const v = (a, b) => GV[b * GW + a];
+  return (v(x, y) > z ? 1 : 0) | (v(x + 1, y) > z ? 2 : 0) | (v(x, y + 1) > z ? 4 : 0) | (v(x + 1, y + 1) > z ? 8 : 0);
+}
+function drawGrid(progress = null) {
+  const cv = $("#grid"), { ctx, w, h } = fit(cv, (GW + 0.2) / (GH + 0.2));
+  const z = +$("#gz").value, interp = $("#gInterp").checked, showCases = $("#gCases").checked;
+  $("#gzV").textContent = z.toFixed(2);
+  const pad = Math.min(w, h) * 0.06, sx = (w - 2 * pad) / (GW - 1), sy = (h - 2 * pad) / (GH - 1);
+  gGeom = { pad, sx, sy };
+  const ink = tok("--ink"), rule = tok("--rule"), water = tok("--water"), contour = tok("--contour"), muted = tok("--muted"), paper = tok("--paper");
+  ctx.fillStyle = tok("--panel"); ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = rule; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = 0; x < GW; x++) { ctx.moveTo(pad + x * sx, pad); ctx.lineTo(pad + x * sx, pad + (GH - 1) * sy); }
+  for (let y = 0; y < GH; y++) { ctx.moveTo(pad, pad + y * sy); ctx.lineTo(pad + (GW - 1) * sx, pad + y * sy); }
+  ctx.stroke();
+  if (showCases) {
+    ctx.fillStyle = muted; ctx.globalAlpha = 0.55; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = `${Math.max(9, sx * 0.2)}px "JetBrains Mono", monospace`;
+    for (let y = 0; y < GH - 1; y++) for (let x = 0; x < GW - 1; x++) {
+      const c = caseOf(x, y, z); if (c === 0 || c === 15) continue;
+      ctx.fillText(c, pad + (x + 0.5) * sx, pad + (y + 0.5) * sy);
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.strokeStyle = water; ctx.lineWidth = 2;
+  ctx.strokeRect(pad + sel.x * sx, pad + sel.y * sy, sx, sy);
+  const lines = marching(GV, GW, GH, z, { interp });
+  ctx.lineJoin = "round"; ctx.lineCap = "round";
+  if (progress === null) {
+    ctx.strokeStyle = contour; ctx.lineWidth = 2.4; strokeLines(ctx, lines, sx, sy, pad, pad);
+  } else {
+    const hues = [contour, water, tok("--index"), tok("--warn")];
+    let left = progress;
+    lines.forEach((l, i) => {
+      if (left <= 0) return;
+      const n = Math.min(l.length, left); left -= l.length;
+      ctx.strokeStyle = hues[i % hues.length]; ctx.lineWidth = 3;
+      strokeLines(ctx, [l.slice(0, n)], sx, sy, pad, pad);
+      const p = l[n - 1]; ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath(); ctx.arc(pad + p[0] * sx, pad + p[1] * sy, 4, 0, 7); ctx.fill();
+    });
+  }
+  const r = Math.max(9, Math.min(sx, sy) * 0.2);
+  ctx.font = `600 ${r * 0.95}px "JetBrains Mono", monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+    const v = GV[y * GW + x], cx = pad + x * sx, cy = pad + y * sy, hi = v > z;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7);
+    ctx.fillStyle = hi ? water : paper; ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = hi ? water : muted; ctx.stroke();
+    ctx.fillStyle = hi ? paper : ink; ctx.fillText(v, cx, cy + 0.5);
+  }
+  const closed = lines.filter(isClosed).length;
+  $("#gStats").innerHTML = `<b>${lines.length}</b> polylines · ${closed} closed · ${lines.length - closed} open`;
+  inspect(z, interp);
+  return lines;
+}
+function inspect(z, interp) {
+  const { x, y } = sel, v = (a, b) => GV[b * GW + a];
+  const ul = v(x, y), ur = v(x + 1, y), ll = v(x, y + 1), lr = v(x + 1, y + 1);
+  const c = caseOf(x, y, z), bits = [["ul", ul, 1], ["ur", ur, 2], ["ll", ll, 4], ["lr", lr, 8]];
+  const bin = c.toString(2).padStart(4, "0");
+  const edges = [["top", ul, ur, `x = ${x} + `], ["bottom", ll, lr, `x = ${x} + `], ["left", ul, ll, `y = ${y} + `], ["right", ur, lr, `y = ${y} + `]];
+  let cross = "";
+  for (const [n, a, b, base] of edges) {
+    if ((a > z) === (b > z)) continue;
+    const t = interp ? (z - a) / (b - a) : 0.5;
+    cross += `<div>${n.padEnd(6, " ")} ${interp ? `(${z.toFixed(2)}−${a})/(${b}−${a})` : "midpoint"} = ${t.toFixed(3)}<br>       ${base}${t.toFixed(3)}</div>`;
+  }
+  const kind = c === 0 || c === 15 ? "no crossing, skipped" : (c === 6 || c === 9) ? "saddle (ambiguous)" : "one segment";
+  $("#insp").innerHTML = `<h4>Cell (${x}, ${y})</h4>
+    <div class="row">${bits.map(([n, val, b]) => `<span class="${val > z ? "bit-on" : ""}">${n}=${val}${val > z ? " → " + b : ""}</span>`).join("")}</div>
+    <div style="margin-top:.5rem">case = <b>${c}</b> = 0b${bin} <span style="color:var(--muted)">(lr ll ur ul)</span></div>
+    <div style="color:var(--muted)">${kind}</div>
+    ${cross ? `<h4 style="margin-top:.7rem">Edge crossings</h4>${cross}` : ""}`;
+}
+$("#grid").addEventListener("click", ev => {
+  if (!gGeom) return;
+  const rect = ev.currentTarget.getBoundingClientRect();
+  const x = Math.floor((ev.clientX - rect.left - gGeom.pad) / gGeom.sx), y = Math.floor((ev.clientY - rect.top - gGeom.pad) / gGeom.sy);
+  if (x >= 0 && y >= 0 && x < GW - 1 && y < GH - 1) { sel = { x, y }; drawGrid(); }
+});
+$("#gTrace").addEventListener("click", () => {
+  if (traceAnim) cancelAnimationFrame(traceAnim);
+  const lines = marching(GV, GW, GH, +$("#gz").value, { interp: $("#gInterp").checked });
+  const total = lines.reduce((s, l) => s + l.length, 0);
+  if (reduceMotion) { drawGrid(total); return; }
+  let p = 1, last = 0;
+  const step = t => {
+    if (t - last > 70) { last = t; drawGrid(p++); }
+    if (p <= total) traceAnim = requestAnimationFrame(step); else { traceAnim = null; drawGrid(total); }
+  };
+  traceAnim = requestAnimationFrame(step);
+});
+
+/* ---------- §3 cases gallery ---------- */
+function buildCases() {
+  const host = $("#cases"); host.innerHTML = "";
+  const water = "var(--water)", mid = { t: [32, 8], b: [32, 56], l: [8, 32], r: [56, 32] };
+  const corner = [[8, 8, 1], [56, 8, 2], [8, 56, 4], [56, 56, 8]];
+  for (let c = 0; c < 16; c++) {
+    const seg = (pairs, dash) => (pairs || []).map(([a, b]) => `<line x1="${mid[a][0]}" y1="${mid[a][1]}" x2="${mid[b][0]}" y2="${mid[b][1]}" stroke="var(--contour)" stroke-width="3.5" stroke-linecap="round" ${dash ? 'stroke-dasharray="3 5" opacity=".8"' : ""}/>`).join("");
+    const svg = `<svg viewBox="0 0 64 64" role="img" aria-label="case ${c}">
+      <rect x="8" y="8" width="48" height="48" fill="var(--panel)" stroke="var(--rule)" stroke-width="1.5"/>
+      ${seg(CASES[c])}${SADDLE_HIGH[c] ? seg(SADDLE_HIGH[c], true) : ""}
+      ${corner.map(([x, y, b]) => `<circle cx="${x}" cy="${y}" r="5.5" fill="${c & b ? water : "var(--paper)"}" stroke="${c & b ? water : "var(--muted)"}" stroke-width="1.5"/>`).join("")}
+    </svg>`;
+    const d = document.createElement("div"); d.className = "case";
+    d.innerHTML = `${svg}<span><b>${c}</b> ${c.toString(2).padStart(4, "0")}</span>`;
+    host.appendChild(d);
+  }
+}
+
+/* ---------- §3a saddle ---------- */
+const SW = 6, SH = 6;
+const SV = [0,0,0,0,0,0, 0,3,3,1,0,0, 0,3,9,2,1,0, 0,1,2,9,3,0, 0,0,1,3,3,0, 0,0,0,0,0,0];
+function bilinear(x, y) {
+  const x0 = Math.min(Math.floor(x), SW - 2), y0 = Math.min(Math.floor(y), SH - 2), fx = x - x0, fy = y - y0, v = (a, b) => SV[b * SW + a];
+  return v(x0, y0) * (1 - fx) * (1 - fy) + v(x0 + 1, y0) * fx * (1 - fy) + v(x0, y0 + 1) * (1 - fx) * fy + v(x0 + 1, y0 + 1) * fx * fy;
+}
+function drawSaddle() {
+  const cv = $("#saddle"), { ctx, w, h } = fit(cv, 1);
+  const z = +$("#sz").value, mode = document.querySelector('input[name="sm"]:checked').value;
+  $("#szV").textContent = z.toFixed(1);
+  const pad = w * 0.07, s = (w - 2 * pad) / (SW - 1);
+  ctx.fillStyle = tok("--panel"); ctx.fillRect(0, 0, w, h);
+  const res = 90, off = document.createElement("canvas"); off.width = off.height = res;
+  const o = off.getContext("2d"), img = o.createImageData(res, res), wt = hex(tok("--water")), pn = hex(tok("--panel"));
+  for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) {
+    const above = bilinear(i / (res - 1) * (SW - 1), j / (res - 1) * (SH - 1)) > z, k = (j * res + i) * 4;
+    for (let c = 0; c < 3; c++) img.data[k + c] = above ? pn[c] + (wt[c] - pn[c]) * 0.22 : pn[c];
+    img.data[k + 3] = 255;
+  }
+  o.putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(off, pad, pad, s * (SW - 1), s * (SH - 1));
+  ctx.strokeStyle = tok("--rule"); ctx.lineWidth = 1; ctx.beginPath();
+  for (let i = 0; i < SW; i++) { ctx.moveTo(pad + i * s, pad); ctx.lineTo(pad + i * s, pad + (SH - 1) * s); ctx.moveTo(pad, pad + i * s); ctx.lineTo(pad + (SW - 1) * s, pad + i * s); }
+  ctx.stroke();
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = tok("--muted"); ctx.lineWidth = 1.5;
+  ctx.strokeRect(pad + 2 * s, pad + 2 * s, s, s); ctx.setLineDash([]);
+  const lines = marching(SV, SW, SH, z, { saddle: mode });
+  ctx.strokeStyle = tok("--contour"); ctx.lineWidth = 3; ctx.lineJoin = "round"; strokeLines(ctx, lines, s, s, pad, pad);
+  ctx.font = `600 ${s * 0.2}px "JetBrains Mono", monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) {
+    const v = SV[y * SW + x], hi = v > z;
+    ctx.beginPath(); ctx.arc(pad + x * s, pad + y * s, s * 0.16, 0, 7);
+    ctx.fillStyle = hi ? tok("--water") : tok("--paper"); ctx.fill(); ctx.strokeStyle = hi ? tok("--water") : tok("--muted"); ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.fillStyle = hi ? tok("--paper") : tok("--ink"); ctx.fillText(v, pad + x * s, pad + y * s + 0.5);
+  }
+  const truth = 5.5 > z ? 1 : 2;
+  const ok = lines.length === truth;
+  $("#sStats").innerHTML = `<b>${lines.length}</b> contour${lines.length > 1 ? "s" : ""} · true surface has <b>${truth}</b> · <span style="color:var(${ok ? "--muted" : "--warn"})">${ok ? "matches" : "topology differs"}</span>`;
+}
+
+/* ---------- §6 tiles ---------- */
+const T = 20, TILES = terrain(3 * T, 3 * T, 31);
+function drawTiles() {
+  const cv = $("#tiles"), { ctx, w, h } = fit(cv, 1);
+  const halo = +$("#halo").value, byTile = $("#tColor").checked;
+  $("#haloV").textContent = halo + " px";
+  const N = 3 * T, s = w / (N - 1);
+  ctx.fillStyle = tok("--panel"); ctx.fillRect(0, 0, w, h);
+  const hues = [tok("--contour"), tok("--water")];
+  const iv = 25, k0 = Math.ceil(TILES.min / iv), k1 = Math.floor(TILES.max / iv);
+  let totalLines = 0;
+  for (let ty = 0; ty < 3; ty++) for (let tx = 0; tx < 3; tx++) {
+    const x0 = Math.max(0, tx * T - halo), y0 = Math.max(0, ty * T - halo);
+    const x1 = Math.min(N - 1, tx * T + T - 1 + halo), y1 = Math.min(N - 1, ty * T + T - 1 + halo);
+    const ww = x1 - x0 + 1, hh = y1 - y0 + 1, win = new Float64Array(ww * hh);
+    for (let y = 0; y < hh; y++) for (let x = 0; x < ww; x++) win[y * ww + x] = TILES.g[(y0 + y) * N + x0 + x];
+    ctx.save();
+    ctx.beginPath(); ctx.rect(tx * T * s, ty * T * s, T * s, T * s); ctx.clip();
+    if ((tx + ty) % 2 === 0) { ctx.fillStyle = tok("--paper"); ctx.globalAlpha = 0.55; ctx.fillRect(tx * T * s, ty * T * s, T * s, T * s); ctx.globalAlpha = 1; }
+    ctx.strokeStyle = byTile ? hues[(tx + ty) % 2] : tok("--contour"); ctx.lineWidth = 1.8; ctx.lineJoin = "round";
+    for (let k = k0; k <= k1; k++) {
+      const lines = marching(win, ww, hh, k * iv - 1e-4);
+      totalLines += lines.length;
+      strokeLines(ctx, lines, s, s, x0 * s, y0 * s);
+    }
+    ctx.restore();
+  }
+  ctx.strokeStyle = tok("--muted"); ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 1; i < 3; i++) { ctx.moveTo(i * T * s, 0); ctx.lineTo(i * T * s, h); ctx.moveTo(0, i * T * s); ctx.lineTo(w, i * T * s); }
+  ctx.stroke(); ctx.setLineDash([]);
+  const used = (T + 2 * halo) ** 2 - T * T;
+  $("#tStats").innerHTML = halo === 0 ? `<span style="color:var(--warn)">seams open</span> · ${totalLines} polyline pieces` :
+    `seams closed · ${totalLines} polyline pieces · halo reads <b>${used}</b> neighbour samples`;
+}
+
+/* ---------- wiring ---------- */
+function drawAll() { drawHero(); drawGrid(); buildCases(); drawSaddle(); drawTiles(); }
+[["#heroIv", drawHero], ["#heroTint", drawHero], ["#heroIdx", drawHero], ["#gz", () => drawGrid()], ["#gInterp", () => drawGrid()], ["#gCases", () => drawGrid()],
+ ["#sz", drawSaddle], ["#halo", drawTiles], ["#tColor", drawTiles]]
+  .forEach(([s, f]) => { $(s).addEventListener("input", f); });
+document.querySelectorAll('input[name="sm"]').forEach(el => el.addEventListener("change", drawSaddle));
+let rz; new ResizeObserver(() => { clearTimeout(rz); rz = setTimeout(drawAll, 80); }).observe(document.body);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
+new MutationObserver(drawAll).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawAll);
+drawAll();
+})();
+</script>
+</body>
+</html>

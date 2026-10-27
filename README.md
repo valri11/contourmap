@@ -2,13 +2,22 @@
 
 Compute contour lines (isolines) for any 2D data in Go.
 
+This is a maintained fork of [fogleman/contourmap](https://github.com/fogleman/contourmap).
+It fixes open contours losing their last segment, makes output deterministic,
+adds no-data (NaN, ±Inf) support and selectable saddle rules, and is about 7× faster
+with about 20× less garbage on tile-sized grids. See
+[docs/design/marching-squares.md](docs/design/marching-squares.md) for how it
+works and how it differs from upstream, or open
+[docs/design/marching-squares.html](docs/design/marching-squares.html) for an
+interactive walkthrough.
+
 ### Installation
 
-    go get -u github.com/fogleman/contourmap
-    
+    go get github.com/valri11/contourmap
+
 ### Documentation
 
-https://godoc.org/github.com/fogleman/contourmap
+https://pkg.go.dev/github.com/valri11/contourmap
 
 ### Example Usage
 
@@ -16,7 +25,7 @@ https://godoc.org/github.com/fogleman/contourmap
 
 A new `ContourMap` can be generated in many different ways, depending on what type of data you have.
 
-Use `FromFloat64s` if you have an array of numbers. The length of the array must equal `width * height`. The two-dimensional data is stored in a flat array in row-major order.
+Use `FromFloat64s` if you have an array of numbers. The length of the array must equal `width * height`. The two-dimensional data is stored in a flat array in row-major order. NaN values mean no data: contours stop at the edge of a NaN region.
 
 ```go
 m := contourmap.FromFloat64s(width, height, data)
@@ -52,9 +61,27 @@ for _, contour := range contours {
 }
 ```
 
+For many levels at once, `ContourLevels` reuses its working buffers across levels:
+
+```go
+for i, contours := range m.ContourLevels(levels) {
+    // contours for levels[i]
+}
+```
+
+Output is deterministic, and both methods are safe for concurrent use.
+
+#### Resolving Saddles
+
+A saddle cell has two high corners on one diagonal, so it can be drawn with the high corners joined or kept apart. The default, `SaddleConnectLow`, matches upstream. `SaddleAsymptotic` is exact for the bilinear surface through the cell's corners.
+
+```go
+m.Saddle = contourmap.SaddleAsymptotic // or SaddleCenter, SaddleConnectHigh
+```
+
 #### Closing Contours at the Grid Perimeter
 
-Contours may end at the edge of the grid data, forming open contours. If you want to force all contours to be closed by following the perimeter of the grid, you can use `ContourMap.Closed` which will generate a new ContourMap that can be used for this purpose:
+Contours may end at the edge of the grid data, forming open contours. If you want to force all contours to be closed by following the perimeter of the grid, you can use `ContourMap.Closed` which will generate a new ContourMap that can be used for this purpose. Points from the closed map are offset by (1, 1) because of the added border.
 
 ```go
 m = m.Closed() // now all contours will be closed paths
@@ -62,14 +89,24 @@ m = m.Closed() // now all contours will be closed paths
 
 ### Examples
 
-Some examples are included to help you get started.
+The examples are a separate module, so their drawing dependencies are not pulled into the library.
 
-    $ cd go/src/github.com/fogleman/contourmap/examples
-    $ go run iceland.go iceland.jpg
+    $ cd examples
+    $ go run ./iceland iceland/iceland.jpg
 
 ![Iceland Example](https://i.imgur.com/fd7fUnt.png)
 
-    $ go run examples/function.go
-    
+    $ go run ./function
+
 ![Function Example](https://i.imgur.com/lbGXPC9.png)
 
+### Testing and benchmarks
+
+    $ go test -race ./
+    $ go test -run '^$' -bench . -benchmem ./
+
+The upstream implementation is kept in `legacy_test.go` as a reference for equivalence tests and benchmarks.
+
+### License
+
+MIT. See [LICENSE.md](LICENSE.md).
