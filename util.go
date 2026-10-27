@@ -6,7 +6,8 @@ import (
 )
 
 func imageToGray16(im image.Image) *image.Gray16 {
-	dst := image.NewGray16(im.Bounds())
-	draw.Draw(dst, im.Bounds(), im, image.ZP, draw.Src)
+	b := im.Bounds()
+	dst := image.NewGray16(b)
+	draw.Draw(dst, b, im, b.Min, draw.Src)
 	return dst
 }
