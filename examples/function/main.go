@@ -4,8 +4,8 @@ import (
 	"math"
 
 	"github.com/fogleman/colormap"
-	"github.com/fogleman/contourmap"
 	"github.com/fogleman/gg"
+	"github.com/valri11/contourmap"
 )
 
 const (

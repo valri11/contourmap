@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/fogleman/colormap"
-	"github.com/fogleman/contourmap"
 	"github.com/fogleman/gg"
+	"github.com/valri11/contourmap"
 )
 
 const (
@@ -18,7 +18,7 @@ const (
 
 func main() {
 	if len(os.Args) != 2 {
-		log.Fatal("Usage: go run iceland.go iceland.jpg")
+		log.Fatal("Usage: go run ./iceland iceland/iceland.jpg")
 	}
 
 	im, err := gg.LoadImage(os.Args[1])
